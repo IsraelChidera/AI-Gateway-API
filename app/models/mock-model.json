@@ -1,0 +1,102 @@
+[
+  {
+    "answer": "RAG combines retrieval with generation.",
+    "input_tokens": 10,
+    "output_tokens": 8
+  },
+  {
+    "answer": "Vector databases store embeddings for semantic search.",
+    "input_tokens": 12,
+    "output_tokens": 9
+  },
+  {
+    "answer": "Embeddings represent text as numerical vectors.",
+    "input_tokens": 11,
+    "output_tokens": 7
+  },
+  {
+    "answer": "Retrieval helps language models access relevant information.",
+    "input_tokens": 14,
+    "output_tokens": 10
+  },
+  {
+    "answer": "Prompt engineering improves the quality of model responses.",
+    "input_tokens": 13,
+    "output_tokens": 9
+  },
+  {
+    "answer": "Chunking breaks documents into smaller searchable sections.",
+    "input_tokens": 15,
+    "output_tokens": 8
+  },
+  {
+    "answer": "Cosine similarity measures the similarity between vectors.",
+    "input_tokens": 12,
+    "output_tokens": 9
+  },
+  {
+    "answer": "An API allows applications to communicate with external services.",
+    "input_tokens": 16,
+    "output_tokens": 11
+  },
+  {
+    "answer": "Asynchronous programming allows tasks to run without blocking.",
+    "input_tokens": 14,
+    "output_tokens": 10
+  },
+  {
+    "answer": "HTTP GET requests are commonly used to retrieve data.",
+    "input_tokens": 11,
+    "output_tokens": 8
+  },
+  {
+    "answer": "POST requests are commonly used to send data to a server.",
+    "input_tokens": 13,
+    "output_tokens": 10
+  },
+  {
+    "answer": "FastAPI is a Python framework for building APIs.",
+    "input_tokens": 10,
+    "output_tokens": 8
+  },
+  {
+    "answer": "Pydantic provides data validation using Python type hints.",
+    "input_tokens": 12,
+    "output_tokens": 9
+  },
+  {
+    "answer": "Middleware can process requests before they reach an endpoint.",
+    "input_tokens": 14,
+    "output_tokens": 10
+  },
+  {
+    "answer": "Authentication verifies the identity of a user or service.",
+    "input_tokens": 13,
+    "output_tokens": 9
+  },
+  {
+    "answer": "Authorization determines what an authenticated user can access.",
+    "input_tokens": 14,
+    "output_tokens": 10
+  },
+  {
+    "answer": "Caching can reduce response times and database load.",
+    "input_tokens": 11,
+    "output_tokens": 7
+  },
+  {
+    "answer": "Logging helps developers diagnose problems in applications.",
+    "input_tokens": 12,
+    "output_tokens": 8
+  },
+  {
+    "answer": "Unit tests verify that individual pieces of code work correctly.",
+    "input_tokens": 15,
+    "output_tokens": 10
+  },
+  {
+    "answer": "Dependency injection makes application components easier to test.",
+    "input_tokens": 13,
+    "output_tokens": 9
+  }
+]
