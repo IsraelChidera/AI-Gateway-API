@@ -8,8 +8,7 @@ _MOCK_DATA_PATH = Path(__file__).resolve().parent.parent / "models" / "mock-mode
 _MOCK_RESPONSES = json.loads(_MOCK_DATA_PATH.read_text(encoding="utf-8"))
 
 
-class MockProvider(AIProvider):
-    """Canned provider backed by mock-model.json, no external calls."""
+class MockProvider(AIProvider):   
 
     async def chat(self, message: str) -> ProviderReply:
         # Deterministic pick: same message always maps to the same canned entry.
