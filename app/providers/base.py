@@ -9,6 +9,17 @@ class ProviderReply:
     input_tokens: int
     output_tokens: int
 
+class ProviderError(Exception):
+    """Base for all AI provider failures."""
+
+class ProviderRateLimitError(ProviderError):
+    pass
+
+class ProviderUnavailableError(ProviderError):
+    pass
+
+class ProviderTimeoutError(ProviderError):
+    pass
 
 class AIProvider(ABC):
     @abstractmethod
