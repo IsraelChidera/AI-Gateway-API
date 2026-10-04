@@ -5,6 +5,7 @@ class Usage(BaseModel):
     output_tokens: int
 
 class ChatResponse(BaseModel):
+    latency: float
     answer: str
     model: str
     usage: Usage
