@@ -30,7 +30,7 @@ class GeminiProvider(AIProvider):
                         model=self.model,
                         contents=message,
                     ),
-                    timeout=self.timeout
+                    timeout=self.timeout,
                 )
                 # response = await
                 usage = response.usage_metadata
