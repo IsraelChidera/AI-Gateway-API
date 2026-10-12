@@ -1,4 +1,8 @@
+import random
+
 from google import genai
+from google.genai import errors
+
 import asyncio
 
 from app.providers.base import (
@@ -10,12 +14,12 @@ from app.providers.base import (
     ProviderError,
 )
 
-RETRYABLE_CODES = {429, 503, 504}
+RETRYABLE_CODES = {429, 500, 503}
 
 
 class GeminiProvider(AIProvider):
     def __init__(
-        self, api_key: str, model: str, timeout: int = 30, max_retries: int = 3
+        self, api_key: str, model: str, timeout: int = 60, max_retries: int = 3
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
@@ -41,17 +45,14 @@ class GeminiProvider(AIProvider):
                     output_tokens=usage.candidates_token_count or 0,
                 )
             except TimeoutError:
-                return ProviderReply(
-                    text="The request timed out. Please try again later.",
-                    model=self.model,
-                    input_tokens=0,
-                    output_tokens=0,
-                )
+                raise ProviderTimeoutError(f"The AI provider did not respond within {self.timeout} seconds.")                         
+            except errors.APIError as e:
+                if e.code not in RETRYABLE_CODES:
+                    raise ProviderError(f"Gemini error {e.code}: {e.message}") from e
+                if attempt == self.max_retries:
+                    if e.code == 429:
+                        raise ProviderRateLimitError("Gemini rate limit exceeded") from e
+                    raise ProviderUnavailableError("Gemini is temporarily unavailable") from e
+                await asyncio.sleep(2 ** attempt + random.uniform(0, 0.5))                 
             except Exception as e:
-                return ProviderReply(
-                    text=f"An error occurred: {str(e)}",
-                    model=self.model,
-                    input_tokens=0,
-                    output_tokens=0,
-                )
-            # await asyncio.sleep(2 ** at tempt + random.uniform(0, 1))  # Exponential backoff with jitter
+                            raise ProviderError(f"An unexpected error occurred: {str(e)}") 
