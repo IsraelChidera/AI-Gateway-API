@@ -1,6 +1,12 @@
 import math
 
+from app.retrievals.chunking import chunk_text
 from app.retrievals.embeddings import documents, embed_documents, embed_query
+from app.retrievals.chunking import article
+
+
+chunks = chunk_text(article, chunk_size=100, overlap=10)
+
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     """Score from about -1 to 1. Higher means more similar in meaning."""
@@ -27,6 +33,7 @@ def search(query: str, documents: list[str], k: int = 3) -> list[tuple[str, floa
     # 4. Return the top k
     return scored[:k]
 
+# print(results = search("How do I reset my password?", chunks, k=3))
 
 if __name__ == "__main__":
     query = "Where can I change my password?"
