@@ -1,7 +1,11 @@
 from google.genai import types
 from google import genai
 
-client = genai.Client()
+from app.config import get_settings
+
+settings = get_settings()
+
+client = genai.Client(api_key=settings.gemini_api_key)
 
 demo_documents = [
     "You can reset your password from the account settings page.",
