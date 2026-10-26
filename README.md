@@ -1,91 +1,84 @@
-# FastAPI AI Chat Service
+# AI Gateway API
 
-An async **FastAPI** backend that wraps Google **Gemini** behind a clean, provider-agnostic API, with a growing **retrieval (RAG)** toolkit for chunking, embedding and semantic search.
+A lightweight, async **AI gateway** built with **FastAPI**. It sits between your applications and large language model providers, exposing **one stable, unified API** no matter which model is behind it.
 
-It is built to be production-minded from the start: typed request/response models, retries with exponential backoff, timeouts, upstream errors mapped to proper HTTP status codes, and a mock provider so you can develop and test without spending API quota.
+Clients send a simple request. The gateway routes it to the configured provider (currently Google **Gemini**), handles timeouts, retries and rate limits, and returns a **normalized response** with the answer, latency and token usage.
+
+```
+   Your apps                AI Gateway                     LLM providers
+ ┌───────────┐       ┌──────────────────────┐        ┌──────────────────┐
+ │ Web / API │       │  • Unified /chat API │        │  Google Gemini   │
+ │ Mobile    │ ────▶ │  • Retries + backoff │ ────▶  │  Mock (offline)  │
+ │ Services  │       │  • Timeouts          │        │  …more to come   │
+ └───────────┘       │  • Error mapping     │        └──────────────────┘
+                     │  • Usage + latency   │
+                     └──────────────────────┘
+```
+
+---
+
+## Why a gateway?
+
+Calling an LLM SDK directly from every service spreads the same concerns everywhere: API keys, retry logic, error handling, cost tracking. This gateway centralizes them:
+
+| Concern              | Without a gateway                       | With this gateway                                      |
+| -------------------- | --------------------------------------- | ------------------------------------------------------ |
+| **Provider lock-in** | SDK calls hard-coded in every service   | Swap providers behind one `AIProvider` interface       |
+| **Reliability**      | Each client writes its own retries      | Built-in exponential backoff with jitter               |
+| **Errors**           | Raw, provider-specific SDK exceptions   | Consistent HTTP status codes (`429`, `503`, `504`, …)  |
+| **Observability**    | Usage scattered or untracked            | Every response reports latency and token usage         |
+| **Secrets**          | API keys copied into many apps          | Keys live in one place, the gateway                    |
 
 ---
 
 ## Features
 
-- **`POST /chat`**: send a message, get back the model's answer plus latency and token usage.
-- **Pluggable AI providers**: a single `AIProvider` interface with two implementations:
-  - `GeminiProvider`: real calls through the `google-genai` SDK
-  - `MockProvider`: deterministic canned replies from JSON, so it's free, offline and repeatable
-- **Resilience built in**:
-  - Configurable request timeout
-  - Automatic retries on `429` / `500` / `503` with exponential backoff and jitter
-  - Global exception handler that turns provider failures into meaningful HTTP responses
-- **Retrieval toolkit (in progress)**: text chunking with overlap, Gemini embeddings (`gemini-embedding-001`) and cosine-similarity search
-- **Typed configuration** through `pydantic-settings` and a `.env` file
-- **Async test suite** with `pytest`, `pytest-asyncio` and `httpx`
+- **Unified chat endpoint**: `POST /chat` with the same request/response shape for every provider
+- **Provider abstraction**: any model plugs in by implementing a single `chat()` method
+  - `GeminiProvider`: Google Gemini through the official `google-genai` SDK
+  - `MockProvider`: deterministic offline replies for development and testing
+- **Resilience**
+  - Configurable per-request timeout
+  - Automatic retries on transient errors (`429`, `500`, `503`) with exponential backoff and jitter
+- **Error normalization**: provider failures are translated into standard HTTP responses, including `Retry-After` on rate limits
+- **Usage metering**: input/output token counts and end-to-end latency returned with every reply
+- **Health check**: `GET /health` for load balancers and uptime monitors
+- **Retrieval toolkit (in progress)**: chunking, Gemini embeddings and cosine-similarity search as the base for RAG
+- **Typed config and tests**: `pydantic-settings` for configuration, async `pytest` suite
 
 ---
 
 ## Architecture
 
 ```
-          ┌──────────────┐
- HTTP ──▶ │  API routes  │  app/api/routes/       (chat, health)
-          └──────┬───────┘
-                 ▼
-          ┌──────────────┐
-          │  AIService   │  app/services/         (timing, response shaping)
-          └──────┬───────┘
-                 ▼
-          ┌──────────────┐
-          │  AIProvider  │  app/providers/base.py (interface + error types)
-          └──┬────────┬──┘
-             ▼        ▼
-     GeminiProvider  MockProvider
+ Request ──▶ API routes ──▶ AIService ──▶ AIProvider (interface)
+            (validation)   (latency,         │
+                            normalization)   ├── GeminiProvider
+                                             └── MockProvider
+                  ▲
+                  └── Global exception handler: ProviderError ─▶ HTTP status
 ```
 
-Routes depend on the `AIService`, and the service depends only on the abstract `AIProvider`. To swap Gemini for another model (or the mock), you change a single dependency function in `app/api/routes/chat.py`.
+| Layer        | Location                    | Responsibility                                              |
+| ------------ | --------------------------- | ----------------------------------------------------------- |
+| **Routes**   | `app/api/routes/`           | HTTP interface, request validation, dependency injection    |
+| **Service**  | `app/services/ai_service.py`| Times the call, shapes the unified `ChatResponse`           |
+| **Providers**| `app/providers/`            | Talk to a specific LLM, apply retries/timeouts, raise typed errors |
+| **Errors**   | `app/main.py`               | Map `ProviderError` subclasses to HTTP status codes         |
 
 ---
 
-## Project Structure
-
-```
-.
-├── app/
-│   ├── main.py                  # FastAPI app, routers, global error handler
-│   ├── config.py                # Settings loaded from environment / .env
-│   ├── api/routes/
-│   │   ├── chat.py              # POST /chat
-│   │   └── health.py            # GET /health
-│   ├── models/
-│   │   ├── chat/                # ChatRequest / ChatResponse schemas
-│   │   └── mock-model.json      # Canned replies for MockProvider
-│   ├── providers/
-│   │   ├── base.py              # AIProvider interface, ProviderReply, error classes
-│   │   ├── gemini_provider.py   # Gemini implementation with retries + timeout
-│   │   └── mock_provider.py     # Deterministic offline provider
-│   ├── services/
-│   │   └── ai_service.py        # Orchestrates provider calls, measures latency
-│   └── retrievals/
-│       ├── chunking.py          # Overlapping text chunker
-│       ├── embeddings.py        # Document / query embeddings via Gemini
-│       └── search.py            # Cosine similarity + top-k search
-├── tests/                       # pytest suite
-├── .env.example
-├── pyproject.toml               # pytest config (asyncio_mode = auto)
-└── requirements.txt
-```
-
----
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
 - A [Google Gemini API key](https://aistudio.google.com/app/apikey)
 
-### 1. Clone and create a virtual environment
+### 1. Clone and set up
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/IsraelChidera/py-fast-api-day-3.git
 cd py-fast-api-day-3
 
 python -m venv .venv
@@ -93,37 +86,32 @@ python -m venv .venv
 .venv\Scripts\activate
 # macOS / Linux
 source .venv/bin/activate
-```
 
-### 2. Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment
-
-Copy the example file and add your key:
+### 2. Configure
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable         | Description                                 | Default            |
-| ---------------- | ------------------------------------------- | ------------------ |
-| `GEMINI_API_KEY` | Your Google Gemini API key (**required**)   | —                  |
-| `GEMINI_MODEL`   | Gemini model used for chat                  | `gemini-3.8-flash` |
-| `AI_TIMEOUT`     | Seconds to wait for the provider            | `60`               |
-| `MAX_RETRIES`    | Retry attempts for transient provider errors | `3`               |
+| Variable         | Description                                   | Default            |
+| ---------------- | --------------------------------------------- | ------------------ |
+| `GEMINI_API_KEY` | Google Gemini API key (**required**)          | —                  |
+| `GEMINI_MODEL`   | Model the gateway routes chat requests to     | `gemini-3.8-flash` |
+| `AI_TIMEOUT`     | Seconds before an upstream call times out     | `60`               |
+| `MAX_RETRIES`    | Retry attempts for transient upstream errors  | `3`                |
 
-### 4. Run the server
+### 3. Run the gateway
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API is now available at `http://127.0.0.1:8000`.
-Interactive docs: **http://127.0.0.1:8000/docs** (Swagger UI) or **/redoc**.
+- API: `http://127.0.0.1:8000`
+- Swagger UI: **http://127.0.0.1:8000/docs**
+- ReDoc: **http://127.0.0.1:8000/redoc**
 
 ---
 
@@ -131,13 +119,15 @@ Interactive docs: **http://127.0.0.1:8000/docs** (Swagger UI) or **/redoc**.
 
 ### `GET /health`
 
-Liveness check.
+Returns `200 OK` while the gateway is up.
 
 ```json
 { "status": "ok" }
 ```
 
 ### `POST /chat`
+
+Send a prompt through the gateway.
 
 **Request**
 
@@ -146,6 +136,10 @@ curl -X POST http://127.0.0.1:8000/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Explain RAG in one sentence."}'
 ```
+
+| Field     | Type   | Required | Description             |
+| --------- | ------ | -------- | ----------------------- |
+| `message` | string | yes      | The prompt for the model |
 
 **Response** `200 OK`
 
@@ -161,74 +155,114 @@ curl -X POST http://127.0.0.1:8000/chat \
 }
 ```
 
-`latency` is in milliseconds.
+| Field                 | Description                                       |
+| --------------------- | ------------------------------------------------- |
+| `latency`             | End-to-end provider latency in **milliseconds**   |
+| `answer`              | The model's reply                                 |
+| `model`               | Which model actually served the request           |
+| `usage.input_tokens`  | Prompt tokens consumed                            |
+| `usage.output_tokens` | Completion tokens generated                       |
 
 ### Error responses
 
-Provider failures are caught globally and returned as `{"detail": "<message>"}` with an appropriate status:
+Every upstream failure comes back in one shape, `{"detail": "<message>"}`, with a meaningful status code:
 
-| Situation                                  | Status                    |
-| ------------------------------------------ | ------------------------- |
-| Provider timed out                         | `504 Gateway Timeout`     |
-| Provider unavailable after retries         | `503 Service Unavailable` |
-| Rate limited after retries                 | `429 Too Many Requests` (includes `Retry-After: 30`) |
-| Any other provider error                   | `502 Bad Gateway`         |
-| Invalid request body                       | `422 Unprocessable Entity` |
+| Upstream situation                     | Gateway status              |
+| -------------------------------------- | --------------------------- |
+| Provider did not respond in time       | `504 Gateway Timeout`       |
+| Provider still failing after retries   | `503 Service Unavailable`   |
+| Rate limited after retries             | `429 Too Many Requests` + `Retry-After: 30` |
+| Any other provider error               | `502 Bad Gateway`           |
+| Malformed request body                 | `422 Unprocessable Entity`  |
 
 ---
 
-## Using the Mock Provider
+## Adding a Provider
 
-To develop without calling Gemini, switch the dependency in `app/api/routes/chat.py`:
+Each provider implements one async method and returns a `ProviderReply`:
+
+```python
+from app.providers.base import AIProvider, ProviderReply
+
+class MyProvider(AIProvider):
+    async def chat(self, message: str) -> ProviderReply:
+        ...  # call your model here
+        return ProviderReply(text=..., model=..., input_tokens=..., output_tokens=...)
+```
+
+Raise `ProviderTimeoutError`, `ProviderRateLimitError`, `ProviderUnavailableError` or `ProviderError` on failure, and the gateway maps them to HTTP responses for you. Then return your provider from `get_ai_service()` in `app/api/routes/chat.py`.
+
+### Offline mode with the mock provider
 
 ```python
 def get_ai_service() -> AIService:
     return AIService(MockProvider())
 ```
 
-The mock hashes the incoming message to pick a reply from `app/models/mock-model.json`, so the same input always returns the same output. That makes it a good fit for demos and tests.
+`MockProvider` hashes each message to pick a canned reply from `app/models/mock-model.json`, so responses are deterministic and cost nothing.
 
 ---
 
-## Retrieval / RAG Toolkit
+## Retrieval Toolkit (RAG foundations)
 
-The `app/retrievals` package holds the building blocks for retrieval-augmented generation:
+`app/retrievals/` contains the building blocks for grounding gateway answers in your own data:
 
-1. **Chunking**: `chunk_text(text, chunk_size=500, overlap=50)` splits text into overlapping windows so context isn't lost at boundaries.
-2. **Embeddings**: `embed_documents()` and `embed_query()` call `gemini-embedding-001` with the correct `RETRIEVAL_DOCUMENT` / `RETRIEVAL_QUERY` task types.
-3. **Search**: `search(query, documents, k)` embeds both sides, scores them with cosine similarity and returns the top-k matches.
+| Module          | What it does                                                                 |
+| --------------- | ---------------------------------------------------------------------------- |
+| `chunking.py`   | `chunk_text()` splits text into overlapping windows so context isn't cut off |
+| `embeddings.py` | `embed_documents()` / `embed_query()` via `gemini-embedding-001`             |
+| `search.py`     | Cosine-similarity ranking that returns the top-k most relevant chunks        |
 
-Run these modules **from the project root with `-m`** so the `app` package resolves:
+Run them from the project root as modules:
 
 ```bash
 python -m app.retrievals.chunking
 python -m app.retrievals.search
 ```
 
-> Running a file directly (`python app/retrievals/search.py`) fails with `ModuleNotFoundError: No module named 'app'`.
+> Running a file directly (e.g. `python app/retrievals/search.py`) fails with `ModuleNotFoundError: No module named 'app'`.
 
 ---
 
-## Running Tests
+## Project Structure
+
+```
+app/
+├── main.py                 # App entry point, routers, global error handler
+├── config.py               # Environment-based settings
+├── api/routes/             # /chat and /health endpoints
+├── models/chat/            # Unified request / response schemas
+├── providers/              # AIProvider interface + Gemini and Mock implementations
+├── services/               # AIService: orchestration, latency, normalization
+└── retrievals/             # Chunking, embeddings, semantic search
+tests/                      # Async pytest suite
+```
+
+---
+
+## Testing
 
 ```bash
 pytest
 ```
 
-The tests set a dummy `GEMINI_API_KEY` (see `tests/conftest.py`), so no real key or network access is required. Async tests run automatically thanks to `asyncio_mode = "auto"` in `pyproject.toml`.
+No real API key or network access is needed: `tests/conftest.py` sets a dummy key, and async tests run automatically (`asyncio_mode = "auto"`).
 
 ---
 
 ## Roadmap
 
-- [ ] Wire retrieval into `/chat` for grounded answers
-- [ ] Persist embeddings in a vector store
-- [ ] Select provider through configuration instead of code
+- [ ] Additional providers (OpenAI, Anthropic Claude, local models)
+- [ ] Provider selection and fallback through configuration
+- [ ] Gateway API keys / client authentication
+- [ ] Per-client rate limiting and usage quotas
+- [ ] Response caching
 - [ ] Streaming responses
-- [ ] Docker setup
+- [ ] Retrieval-augmented `/chat` with a vector store
+- [ ] Docker image and deployment guide
 
 ---
 
 ## Tech Stack
 
-**FastAPI** · **Uvicorn** · **Pydantic v2** · **pydantic-settings** · **Google GenAI SDK** · **pytest**
+**FastAPI** · **Uvicorn** · **Pydantic v2** · **pydantic-settings** · **Google GenAI SDK** · **pytest** · **httpx**
